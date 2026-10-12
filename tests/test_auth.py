@@ -4,6 +4,7 @@ from pydantic import SecretStr
 from pytest_mock import MockerFixture
 
 from linux_mcp_server.auth import create_auth_provider
+from linux_mcp_server.auth_spiffe import SPIFFETokenVerifier
 from linux_mcp_server.config import AuthConfig
 from linux_mcp_server.config import AuthProvider
 from linux_mcp_server.config import Config
@@ -11,6 +12,7 @@ from linux_mcp_server.config import GitHubAuthConfig
 from linux_mcp_server.config import GoogleAuthConfig
 from linux_mcp_server.config import IntrospectionAuthConfig
 from linux_mcp_server.config import JWTAuthConfig
+from linux_mcp_server.config import SPIFFEAuthConfig
 
 
 class TestCreateAuthProvider:
@@ -134,6 +136,49 @@ class TestCreateAuthProvider:
         mocker.patch("linux_mcp_server.auth.CONFIG", Config(auth=auth_config, host="localhost", port=8000))
 
         with pytest.raises(ValueError, match="LINUX_MCP_AUTH__INTROSPECTION__"):
+            create_auth_provider()
+
+    def test_spiffe_provider(self, mocker):
+        spiffe_config = SPIFFEAuthConfig(
+            trust_domain="example.org",
+            workload_api_socket="unix:///tmp/spire-agent/public/api.sock",
+        )
+        auth_config = AuthConfig(
+            provider=AuthProvider.SPIFFE,
+            spiffe=spiffe_config,
+        )
+        mocker.patch("linux_mcp_server.auth.CONFIG", Config(auth=auth_config, host="localhost", port=8000))
+
+        provider = create_auth_provider()
+        assert provider is not None
+        assert isinstance(provider, SPIFFETokenVerifier)
+        assert provider.trust_domain == "example.org"
+
+    def test_spiffe_provider_with_audience(self, mocker):
+        spiffe_config = SPIFFEAuthConfig(
+            trust_domain="example.org",
+            workload_api_socket="unix:///tmp/spire-agent/public/api.sock",
+            audience="linux-mcp",
+        )
+        auth_config = AuthConfig(
+            provider=AuthProvider.SPIFFE,
+            spiffe=spiffe_config,
+        )
+        mocker.patch("linux_mcp_server.auth.CONFIG", Config(auth=auth_config, host="localhost", port=8000))
+
+        provider = create_auth_provider()
+        assert provider is not None
+        assert isinstance(provider, SPIFFETokenVerifier)
+        assert provider.audience == "linux-mcp"
+
+    def test_spiffe_provider_missing_config_raises(self, mocker):
+        auth_config = AuthConfig(
+            provider=AuthProvider.SPIFFE,
+            spiffe=None,
+        )
+        mocker.patch("linux_mcp_server.auth.CONFIG", Config(auth=auth_config, host="localhost", port=8000))
+
+        with pytest.raises(ValueError, match="SPIFFE auth provider selected"):
             create_auth_provider()
 
 

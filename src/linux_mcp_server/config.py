@@ -102,6 +102,7 @@ class AuthProvider(StrEnum):
     GITHUB = "github"
     JWT = "jwt"
     INTROSPECTION = "introspection"
+    SPIFFE = "spiffe"
 
 
 class GoogleAuthConfig(BaseSettings):
@@ -136,6 +137,14 @@ class IntrospectionAuthConfig(BaseSettings):
     timeout_seconds: int = 10
 
 
+class SPIFFEAuthConfig(BaseSettings):
+    """SPIFFE Workload Identity authentication configuration."""
+
+    trust_domain: str
+    workload_api_socket: str = "unix:///tmp/spire-agent/public/api.sock"
+    audience: str | None = None
+
+
 class AuthConfig(BaseSettings):
     """Authentication configuration."""
 
@@ -144,6 +153,7 @@ class AuthConfig(BaseSettings):
     github: GitHubAuthConfig | None = None
     jwt: JWTAuthConfig | None = None
     introspection: IntrospectionAuthConfig | None = None
+    spiffe: SPIFFEAuthConfig | None = None
 
 
 def parse_cost(v: Any) -> Any:
