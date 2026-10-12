@@ -2,8 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for SELinux parsers."""
 
-import pytest
-
 from linux_mcp_server.parsers import parse_selinux_booleans
 from linux_mcp_server.parsers import parse_selinux_denials
 from linux_mcp_server.parsers import parse_selinux_file_context

@@ -44,10 +44,12 @@ def create_mock_side_effect(command_responses: dict[str, str | Exception]):
 
 class TestGetSelinuxStatus:
     async def test_returns_enforcing_status(self, mcp_client, mock_execute):
-        mock_execute.side_effect = create_mock_side_effect({
-            "getenforce": "Enforcing\n",
-            "sestatus": SESTATUS_OUTPUT,
-        })
+        mock_execute.side_effect = create_mock_side_effect(
+            {
+                "getenforce": "Enforcing\n",
+                "sestatus": SESTATUS_OUTPUT,
+            }
+        )
 
         result = await mcp_client.call_tool("get_selinux_status", {"host": "localhost"})
 
@@ -57,10 +59,12 @@ class TestGetSelinuxStatus:
         assert result.structured_content["mls_status"] == "enabled"
 
     async def test_returns_getenforce_only_when_sestatus_fails(self, mcp_client, mock_execute):
-        mock_execute.side_effect = create_mock_side_effect({
-            "getenforce": "Enforcing\n",
-            "sestatus": "",
-        })
+        mock_execute.side_effect = create_mock_side_effect(
+            {
+                "getenforce": "Enforcing\n",
+                "sestatus": "",
+            }
+        )
 
         result = await mcp_client.call_tool("get_selinux_status", {"host": "localhost"})
 
@@ -109,9 +113,7 @@ class TestGetSelinuxFileContext:
     async def test_returns_file_context(self, mcp_client, mock_execute):
         mock_execute.return_value = (0, "system_u:object_r:etc_t:s0 /etc/passwd", "")
 
-        result = await mcp_client.call_tool(
-            "get_selinux_file_context", {"path": "/etc/passwd", "host": "localhost"}
-        )
+        result = await mcp_client.call_tool("get_selinux_file_context", {"path": "/etc/passwd", "host": "localhost"})
 
         assert result.structured_content is not None
         assert result.structured_content["context"] == "system_u:object_r:etc_t:s0"
@@ -119,38 +121,30 @@ class TestGetSelinuxFileContext:
 
     async def test_rejects_relative_path(self, mcp_client, mock_execute):
         with pytest.raises(exceptions.ToolError, match="Path must be absolute"):
-            await mcp_client.call_tool(
-                "get_selinux_file_context", {"path": "relative/path", "host": "localhost"}
-            )
+            await mcp_client.call_tool("get_selinux_file_context", {"path": "relative/path", "host": "localhost"})
 
     async def test_rejects_path_traversal(self, mcp_client, mock_execute):
         with pytest.raises(exceptions.ToolError, match="Path contains invalid"):
-            await mcp_client.call_tool(
-                "get_selinux_file_context", {"path": "/etc/../shadow", "host": "localhost"}
-            )
+            await mcp_client.call_tool("get_selinux_file_context", {"path": "/etc/../shadow", "host": "localhost"})
 
     async def test_raises_on_unsuccessful_output(self, mcp_client, mock_execute):
         mock_execute.return_value = (1, "", "No such file or directory")
 
         with pytest.raises(exceptions.ToolError, match="Unable to get SELinux context"):
-            await mcp_client.call_tool(
-                "get_selinux_file_context", {"path": "/nonexistent", "host": "localhost"}
-            )
+            await mcp_client.call_tool("get_selinux_file_context", {"path": "/nonexistent", "host": "localhost"})
 
     async def test_raises_on_exception(self, mcp_client, mock_execute):
         mock_execute.side_effect = RuntimeError("SSH failed")
 
         with pytest.raises(exceptions.ToolError, match="Error getting SELinux context"):
-            await mcp_client.call_tool(
-                "get_selinux_file_context", {"path": "/etc/passwd", "host": "localhost"}
-            )
+            await mcp_client.call_tool("get_selinux_file_context", {"path": "/etc/passwd", "host": "localhost"})
 
 
 class TestGetSelinuxDenials:
     async def test_returns_denials(self, mcp_client, mock_execute):
         denial_output = (
             "Oct 10 14:23:01 host audit[1234]: AVC avc:  denied  { read } for  pid=5678 "
-            "comm=\"httpd\" scontext=system_u:system_r:httpd_t:s0\n"
+            'comm="httpd" scontext=system_u:system_r:httpd_t:s0\n'
             "Oct 10 14:23:02 host kernel: non-avc audit message\n"
         )
         mock_execute.return_value = (0, denial_output, "")
@@ -180,9 +174,7 @@ class TestGetSelinuxDenials:
     async def test_accepts_since_parameter(self, mcp_client, mock_execute):
         mock_execute.return_value = (0, "", "")
 
-        result = await mcp_client.call_tool(
-            "get_selinux_denials", {"since": "1 hour ago", "host": "localhost"}
-        )
+        result = await mcp_client.call_tool("get_selinux_denials", {"since": "1 hour ago", "host": "localhost"})
 
         assert result.structured_content is not None
 
