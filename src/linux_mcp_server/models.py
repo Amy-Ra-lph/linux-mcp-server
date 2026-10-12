@@ -237,6 +237,67 @@ class StorageNodes(BaseModel):
     total: int = Field(default_factory=field_length("nodes"))
 
 
+### SELinux models ###
+class SELinuxStatus(BaseModel):
+    """SELinux enforcement status and policy information."""
+
+    mode: str = ""
+    policy: str = ""
+    mls_status: str = ""
+    policy_deny_unknown: str = ""
+    memory_protection: str = ""
+    max_kernel_policy_version: str = ""
+
+
+class SELinuxBoolean(BaseModel):
+    """A single SELinux boolean and its state."""
+
+    name: str
+    state: str
+
+
+class SELinuxBooleans(BaseModel):
+    """List of SELinux booleans."""
+
+    booleans: list[SELinuxBoolean] = Field(default_factory=list)
+    total: int = Field(default_factory=field_length("booleans"))
+
+
+class SELinuxFileContext(BaseModel):
+    """SELinux security context for a file."""
+
+    path: str
+    context: str
+
+
+class SELinuxDenial(BaseModel):
+    """A parsed SELinux AVC denial from audit logs."""
+
+    raw: str
+
+
+class SELinuxDenials(BaseModel):
+    """Collection of SELinux AVC denials."""
+
+    denials: list[SELinuxDenial] = Field(default_factory=list)
+    total: int = Field(default_factory=field_length("denials"))
+
+
+class SELinuxPort(BaseModel):
+    """A single SELinux port type mapping."""
+
+    type: str
+    protocol: str
+    ports: str
+
+
+class SELinuxPorts(BaseModel):
+    """SELinux port type definitions."""
+
+    ports: list[SELinuxPort] = Field(default_factory=list)
+    total: int = Field(default_factory=field_length("ports"))
+
+
 ### Log models ###
 class LogEntries(BaseModel):
     entries: list[str]

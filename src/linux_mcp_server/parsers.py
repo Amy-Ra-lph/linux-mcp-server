@@ -24,6 +24,14 @@ from linux_mcp_server.models import NodeEntry
 from linux_mcp_server.models import PCPSample
 from linux_mcp_server.models import PCPTimeRange
 from linux_mcp_server.models import ProcessInfo
+from linux_mcp_server.models import SELinuxBoolean
+from linux_mcp_server.models import SELinuxBooleans
+from linux_mcp_server.models import SELinuxDenial
+from linux_mcp_server.models import SELinuxDenials
+from linux_mcp_server.models import SELinuxFileContext
+from linux_mcp_server.models import SELinuxPort
+from linux_mcp_server.models import SELinuxPorts
+from linux_mcp_server.models import SELinuxStatus
 from linux_mcp_server.models import SwapInfo
 from linux_mcp_server.models import SystemInfo
 from linux_mcp_server.models import SystemMemory
@@ -695,3 +703,99 @@ def parse_file_listing(
             entries.append(NodeEntry(name=line.strip()))
 
     return entries
+
+
+def parse_sestatus(stdout: str) -> SELinuxStatus:
+    """Parse sestatus output into SELinuxStatus object.
+
+    Args:
+        stdout: Raw output from sestatus command.
+
+    Returns:
+        SELinuxStatus object.
+    """
+    fields: dict[str, str] = {}
+    for line in stdout.strip().splitlines():
+        if ":" in line:
+            key, value = line.split(":", 1)
+            fields[key.strip().lower()] = value.strip()
+
+    return SELinuxStatus(
+        mode=fields.get("current mode", ""),
+        policy=fields.get("loaded policy name", fields.get("policy from config", "")),
+        mls_status=fields.get("policy mls status", ""),
+        policy_deny_unknown=fields.get("policy deny_unknown status", ""),
+        memory_protection=fields.get("memory protection checking", ""),
+        max_kernel_policy_version=fields.get("max kernel policy version", ""),
+    )
+
+
+def parse_selinux_booleans(stdout: str) -> SELinuxBooleans:
+    """Parse getsebool -a output into SELinuxBooleans object.
+
+    Args:
+        stdout: Raw output from getsebool -a command.
+
+    Returns:
+        SELinuxBooleans object.
+    """
+    booleans = []
+    for line in stdout.strip().splitlines():
+        if " --> " in line:
+            name, state = line.split(" --> ", 1)
+            booleans.append(SELinuxBoolean(name=name.strip(), state=state.strip()))
+    return SELinuxBooleans(booleans=booleans)
+
+
+def parse_selinux_file_context(stdout: str) -> SELinuxFileContext:
+    """Parse ls -1dZ output into SELinuxFileContext object.
+
+    Args:
+        stdout: Raw output from ls -1dZ command.
+
+    Returns:
+        SELinuxFileContext object.
+    """
+    line = stdout.strip()
+    parts = line.split(None, 1)
+    if len(parts) == 2:
+        return SELinuxFileContext(context=parts[0], path=parts[1])
+    return SELinuxFileContext(context="", path=line)
+
+
+def parse_selinux_denials(stdout: str) -> SELinuxDenials:
+    """Parse journalctl audit output for AVC denials.
+
+    Args:
+        stdout: Raw output from journalctl audit query.
+
+    Returns:
+        SELinuxDenials object with matched denial entries.
+    """
+    denials = []
+    for line in stdout.strip().splitlines():
+        if "avc:" in line.lower() or "AVC" in line:
+            denials.append(SELinuxDenial(raw=line.strip()))
+    return SELinuxDenials(denials=denials)
+
+
+def parse_selinux_ports(stdout: str) -> SELinuxPorts:
+    """Parse semanage port -l output into SELinuxPorts object.
+
+    Args:
+        stdout: Raw output from semanage port -l command.
+
+    Returns:
+        SELinuxPorts object.
+    """
+    ports = []
+    for line in stdout.strip().splitlines():
+        if line.startswith("SELinux") or line.startswith("-"):
+            continue
+        parts = line.split()
+        if len(parts) >= 3:
+            port_type = parts[0]
+            protocol = parts[1]
+            port_range = " ".join(parts[2:])
+            ports.append(SELinuxPort(type=port_type, protocol=protocol, ports=port_range))
+    return SELinuxPorts(ports=ports)

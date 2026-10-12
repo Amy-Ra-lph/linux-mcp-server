@@ -368,6 +368,38 @@ COMMANDS: Mapping[str, CommandGroup] = MappingProxyType(
                 ),
             }
         ),
+        # === SELinux ===
+        "selinux_status": CommandGroup(
+            commands={
+                "getenforce": CommandSpec(args=("getenforce",)),
+                "sestatus": CommandSpec(args=("sestatus",)),
+            }
+        ),
+        "selinux_booleans": CommandGroup(
+            commands={
+                "default": CommandSpec(args=("getsebool", "-a")),
+            }
+        ),
+        "selinux_file_contexts": CommandGroup(
+            commands={
+                "default": CommandSpec(args=("ls", "-1dZ", "--", "{path}")),
+            }
+        ),
+        "selinux_avc_denials": CommandGroup(
+            commands={
+                "default": CommandSpec(
+                    args=("journalctl", "-n", "{lines}", "--no-pager", "_TRANSPORT=audit", "SYSLOG_IDENTIFIER=audit"),
+                    optional_flags={
+                        "since": ("--since", "{since}"),
+                    },
+                ),
+            }
+        ),
+        "selinux_ports": CommandGroup(
+            commands={
+                "default": CommandSpec(args=("semanage", "port", "-l")),
+            }
+        ),
     }
 )
 

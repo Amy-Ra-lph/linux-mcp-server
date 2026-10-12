@@ -25,6 +25,13 @@ from linux_mcp_server.tools.run_script import run_script_interactive
 from linux_mcp_server.tools.run_script import run_script_with_confirmation
 from linux_mcp_server.tools.run_script import validate_script
 
+# selinux
+from linux_mcp_server.tools.selinux import get_selinux_booleans
+from linux_mcp_server.tools.selinux import get_selinux_denials
+from linux_mcp_server.tools.selinux import get_selinux_file_context
+from linux_mcp_server.tools.selinux import get_selinux_ports
+from linux_mcp_server.tools.selinux import get_selinux_status
+
 # services
 from linux_mcp_server.tools.services import get_service_logs
 from linux_mcp_server.tools.services import get_service_status
@@ -56,6 +63,11 @@ __all__ = [
     "get_network_connections",
     "get_network_interfaces",
     "get_process_info",
+    "get_selinux_booleans",
+    "get_selinux_denials",
+    "get_selinux_file_context",
+    "get_selinux_ports",
+    "get_selinux_status",
     "get_service_logs",
     "get_service_status",
     "get_system_information",
