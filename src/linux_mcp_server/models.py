@@ -298,6 +298,34 @@ class SELinuxPorts(BaseModel):
     total: int = Field(default_factory=field_length("ports"))
 
 
+### CVE / Offline Denial models ###
+class CVEExposure(BaseModel):
+    """CVE exposure assessment against SELinux policy."""
+
+    cve_id: str
+    selinux_mode: str
+    assessment: str
+    installed_packages_checked: int
+    policy_constraints: list[str] = Field(default_factory=list)
+
+
+class OfflineDenial(BaseModel):
+    """A parsed AVC denial from raw text."""
+
+    permission: str
+    source_context: str = ""
+    target_context: str = ""
+    target_class: str = ""
+    raw_line: str = ""
+
+
+class OfflineDenials(BaseModel):
+    """Collection of offline-parsed AVC denials."""
+
+    denials: list[OfflineDenial] = Field(default_factory=list)
+    total: int = Field(default_factory=field_length("denials"))
+
+
 ### Log models ###
 class LogEntries(BaseModel):
     entries: list[str]

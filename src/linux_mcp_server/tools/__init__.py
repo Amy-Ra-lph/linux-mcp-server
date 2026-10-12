@@ -1,4 +1,8 @@
 # Arbitrary script execution
+# cve
+from linux_mcp_server.tools.cve import get_cve_exposure
+from linux_mcp_server.tools.cve import parse_offline_denials
+
 # logs
 from linux_mcp_server.tools.logs import get_journal_logs
 from linux_mcp_server.tools.logs import read_log_file
@@ -53,6 +57,7 @@ from linux_mcp_server.tools.system_info import get_system_information
 
 __all__ = [
     "execute_script",
+    "get_cve_exposure",
     "get_cpu_information",
     "get_disk_usage",
     "get_execution_details",
@@ -76,6 +81,7 @@ __all__ = [
     "list_files",
     "list_processes",
     "list_services",
+    "parse_offline_denials",
     "pcp_guide",
     "pcp_list_metrics",
     "pcp_performance_summary",

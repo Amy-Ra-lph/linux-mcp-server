@@ -400,6 +400,12 @@ COMMANDS: Mapping[str, CommandGroup] = MappingProxyType(
                 "default": CommandSpec(args=("semanage", "port", "-l")),
             }
         ),
+        # === CVE ===
+        "cve_rpm_query": CommandGroup(
+            commands={
+                "default": CommandSpec(args=("rpm", "-qa")),
+            }
+        ),
     }
 )
 

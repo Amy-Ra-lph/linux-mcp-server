@@ -21,6 +21,8 @@ from linux_mcp_server.models import MemoryInfo
 from linux_mcp_server.models import NetworkConnection
 from linux_mcp_server.models import NetworkInterface
 from linux_mcp_server.models import NodeEntry
+from linux_mcp_server.models import OfflineDenial
+from linux_mcp_server.models import OfflineDenials
 from linux_mcp_server.models import PCPSample
 from linux_mcp_server.models import PCPTimeRange
 from linux_mcp_server.models import ProcessInfo
@@ -799,3 +801,45 @@ def parse_selinux_ports(stdout: str) -> SELinuxPorts:
             port_range = " ".join(parts[2:])
             ports.append(SELinuxPort(type=port_type, protocol=protocol, ports=port_range))
     return SELinuxPorts(ports=ports)
+
+
+_AVC_PERM_RE = re.compile(r"avc:\s+denied\s+\{\s*(\S+)\s*\}")
+_SCONTEXT_RE = re.compile(r"scontext=(\S+)")
+_TCONTEXT_RE = re.compile(r"tcontext=(\S+)")
+_TCLASS_RE = re.compile(r"tclass=(\S+)")
+
+
+def parse_avc_denial_line(line: str) -> OfflineDenial | None:
+    """Parse a single AVC denial line into structured data."""
+    perm_match = _AVC_PERM_RE.search(line)
+    if not perm_match:
+        return None
+
+    scontext = ""
+    tcontext = ""
+    tclass = ""
+
+    if m := _SCONTEXT_RE.search(line):
+        scontext = m.group(1)
+    if m := _TCONTEXT_RE.search(line):
+        tcontext = m.group(1)
+    if m := _TCLASS_RE.search(line):
+        tclass = m.group(1)
+
+    return OfflineDenial(
+        permission=perm_match.group(1),
+        source_context=scontext,
+        target_context=tcontext,
+        target_class=tclass,
+        raw_line=line.strip(),
+    )
+
+
+def parse_offline_denials(raw_text: str) -> OfflineDenials:
+    """Parse multiple AVC denial lines from raw text."""
+    denials: list[OfflineDenial] = []
+    for line in raw_text.splitlines():
+        denial = parse_avc_denial_line(line)
+        if denial is not None:
+            denials.append(denial)
+    return OfflineDenials(denials=denials)
