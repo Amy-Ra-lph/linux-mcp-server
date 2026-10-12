@@ -49,6 +49,7 @@ classifiers = [
 [project.optional-dependencies]
 gssapi = ["gssapi >=1.11.1"]
 gcp = ["google-auth[requests]>=2.40.0"]
+hardened-parsers = ["enforcement-mcp-parsers>=0.1.0; python_version >= '3.12'"]
 
 [project.urls]
 "Source code" = "https://github.com/rhel-lightspeed/linux-mcp-server"
@@ -221,3 +222,4 @@ exclude-newer = "7 days"
 [tool.uv.sources]
 # slushy-build is not published to PyPI yet; pull it from git.
 slushy-build = { git = "https://github.com/owtaylor/slushy-build" }
+enforcement-mcp-parsers = { git = "https://github.com/Amy-Ra-lph/enforcement-mcp-parsers" }
