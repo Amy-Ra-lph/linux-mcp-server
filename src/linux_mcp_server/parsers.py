@@ -29,6 +29,8 @@ from linux_mcp_server.models import SELinuxBooleans
 from linux_mcp_server.models import SELinuxDenial
 from linux_mcp_server.models import SELinuxDenials
 from linux_mcp_server.models import SELinuxFileContext
+from linux_mcp_server.models import SELinuxPolicyRule
+from linux_mcp_server.models import SELinuxPolicyRules
 from linux_mcp_server.models import SELinuxPort
 from linux_mcp_server.models import SELinuxPorts
 from linux_mcp_server.models import SELinuxStatus
@@ -799,3 +801,46 @@ def parse_selinux_ports(stdout: str) -> SELinuxPorts:
             port_range = " ".join(parts[2:])
             ports.append(SELinuxPort(type=port_type, protocol=protocol, ports=port_range))
     return SELinuxPorts(ports=ports)
+
+
+def parse_sesearch_output(stdout: str) -> SELinuxPolicyRules:
+    """Parse sesearch --allow output into SELinuxPolicyRules.
+
+    Args:
+        stdout: Raw output from sesearch --allow command.
+
+    Returns:
+        SELinuxPolicyRules object.
+    """
+    rules = []
+    for line in stdout.strip().splitlines():
+        line = line.strip()
+        if not line or line.startswith("Found") or line.startswith("#"):
+            continue
+
+        match = re.match(
+            r"(allow|auditallow|dontaudit)\s+(\S+)\s+(\S+):(\S+)\s+\{\s*([^}]+)\s*\}",
+            line,
+        )
+        if match:
+            rule_type = match.group(1)
+            source = match.group(2)
+            target = match.group(3)
+            tclass = match.group(4)
+            permissions = match.group(5).split()
+
+            conditional = ""
+            cond_match = re.search(r"\[\s*(\S+)\s*\]", line)
+            if cond_match:
+                conditional = cond_match.group(1)
+
+            rules.append(SELinuxPolicyRule(
+                rule_type=rule_type,
+                source=source,
+                target=target,
+                tclass=tclass,
+                permissions=permissions,
+                conditional=conditional,
+            ))
+
+    return SELinuxPolicyRules(rules=rules)

@@ -298,6 +298,24 @@ class SELinuxPorts(BaseModel):
     total: int = Field(default_factory=field_length("ports"))
 
 
+class SELinuxPolicyRule(BaseModel):
+    """A single SELinux policy allow rule from sesearch output."""
+
+    rule_type: str = "allow"
+    source: str = ""
+    target: str = ""
+    tclass: str = ""
+    permissions: list[str] = Field(default_factory=list)
+    conditional: str = ""
+
+
+class SELinuxPolicyRules(BaseModel):
+    """Collection of SELinux policy rules from sesearch."""
+
+    rules: list[SELinuxPolicyRule] = Field(default_factory=list)
+    total: int = Field(default_factory=field_length("rules"))
+
+
 ### Log models ###
 class LogEntries(BaseModel):
     entries: list[str]

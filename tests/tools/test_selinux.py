@@ -225,3 +225,79 @@ ssh_port_t                     tcp      22"""
 
         with pytest.raises(exceptions.ToolError, match="Error retrieving SELinux port types"):
             await mcp_client.call_tool("get_selinux_ports", {"host": "localhost"})
+
+
+SESEARCH_TOOL_OUTPUT = """\
+allow httpd_t httpd_config_t:file { getattr ioctl lock open read };
+allow httpd_t http_port_t:tcp_socket { name_bind name_connect };"""
+
+
+class TestGetSelinuxPolicyRules:
+    async def test_returns_policy_rules(self, mcp_client, mock_execute):
+        mock_execute.return_value = (0, SESEARCH_TOOL_OUTPUT, "")
+
+        result = await mcp_client.call_tool(
+            "get_selinux_policy_rules", {"source": "httpd_t", "host": "localhost"}
+        )
+
+        assert result.structured_content is not None
+        assert result.structured_content["total"] == 2
+        assert result.structured_content["rules"][0]["source"] == "httpd_t"
+
+    async def test_passes_all_filters(self, mcp_client, mock_execute):
+        mock_execute.return_value = (0, SESEARCH_TOOL_OUTPUT, "")
+
+        result = await mcp_client.call_tool(
+            "get_selinux_policy_rules",
+            {
+                "source": "httpd_t",
+                "target": "httpd_config_t",
+                "tclass": "file",
+                "permission": "read",
+                "host": "localhost",
+            },
+        )
+
+        assert result.structured_content is not None
+
+    async def test_returns_empty_when_no_rules(self, mcp_client, mock_execute):
+        mock_execute.return_value = (0, "Found 0 semantic av rules.", "")
+
+        result = await mcp_client.call_tool(
+            "get_selinux_policy_rules", {"source": "nonexistent_t", "host": "localhost"}
+        )
+
+        assert result.structured_content is not None
+        assert result.structured_content["total"] == 0
+
+    async def test_raises_on_unsuccessful_output(self, mcp_client, mock_execute):
+        mock_execute.return_value = (1, "", "sesearch: command not found")
+
+        with pytest.raises(exceptions.ToolError, match="Unable to query SELinux policy"):
+            await mcp_client.call_tool(
+                "get_selinux_policy_rules", {"source": "httpd_t", "host": "localhost"}
+            )
+
+    async def test_raises_on_exception(self, mcp_client, mock_execute):
+        mock_execute.side_effect = RuntimeError("Connection refused")
+
+        with pytest.raises(exceptions.ToolError, match="Error querying SELinux policy"):
+            await mcp_client.call_tool(
+                "get_selinux_policy_rules", {"source": "httpd_t", "host": "localhost"}
+            )
+
+    async def test_boolean_filter(self, mcp_client, mock_execute):
+        boolean_output = (
+            "allow httpd_t http_cache_port_t:tcp_socket { name_connect };"
+            " [ httpd_can_network_connect ]:True"
+        )
+        mock_execute.return_value = (0, boolean_output, "")
+
+        result = await mcp_client.call_tool(
+            "get_selinux_policy_rules",
+            {"boolean": "httpd_can_network_connect", "host": "localhost"},
+        )
+
+        assert result.structured_content is not None
+        assert result.structured_content["total"] == 1
+        assert result.structured_content["rules"][0]["conditional"] == "httpd_can_network_connect"

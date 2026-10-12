@@ -8,6 +8,7 @@ from linux_mcp_server.parsers import parse_selinux_booleans
 from linux_mcp_server.parsers import parse_selinux_denials
 from linux_mcp_server.parsers import parse_selinux_file_context
 from linux_mcp_server.parsers import parse_selinux_ports
+from linux_mcp_server.parsers import parse_sesearch_output
 from linux_mcp_server.parsers import parse_sestatus
 
 
@@ -183,3 +184,52 @@ http_port_t                    tcp      80, 443"""
         result = parse_selinux_ports(stdout)
         assert result.total == 1
         assert result.ports[0].type == "http_port_t"
+
+
+SESEARCH_OUTPUT = """\
+allow httpd_t httpd_config_t:file { getattr ioctl lock open read };
+allow httpd_t httpd_log_t:file { append create getattr ioctl lock open read write };
+allow httpd_t http_port_t:tcp_socket { name_bind name_connect };
+allow httpd_t self:capability { dac_override setgid setuid };"""
+
+SESEARCH_WITH_BOOLEAN = """\
+allow httpd_t http_cache_port_t:tcp_socket { name_bind name_connect }; [ httpd_can_network_connect ]:True
+allow httpd_t smtp_port_t:tcp_socket { name_connect }; [ httpd_can_sendmail ]:True"""
+
+SESEARCH_EMPTY = "Found 0 semantic av rules."
+
+
+class TestParseSesearchOutput:
+    def test_parses_allow_rules(self):
+        result = parse_sesearch_output(SESEARCH_OUTPUT)
+        assert result.total == 4
+        assert result.rules[0].source == "httpd_t"
+        assert result.rules[0].target == "httpd_config_t"
+        assert result.rules[0].tclass == "file"
+        assert "read" in result.rules[0].permissions
+        assert "open" in result.rules[0].permissions
+
+    def test_parses_conditional_rules(self):
+        result = parse_sesearch_output(SESEARCH_WITH_BOOLEAN)
+        assert result.total == 2
+        assert result.rules[0].conditional == "httpd_can_network_connect"
+        assert result.rules[1].conditional == "httpd_can_sendmail"
+
+    def test_handles_empty_output(self):
+        result = parse_sesearch_output(SESEARCH_EMPTY)
+        assert result.total == 0
+        assert result.rules == []
+
+    def test_handles_blank_input(self):
+        result = parse_sesearch_output("")
+        assert result.total == 0
+
+    def test_extracts_permissions_list(self):
+        result = parse_sesearch_output(SESEARCH_OUTPUT)
+        rule = result.rules[0]
+        assert rule.permissions == ["getattr", "ioctl", "lock", "open", "read"]
+
+    def test_rule_type_is_allow(self):
+        result = parse_sesearch_output(SESEARCH_OUTPUT)
+        for rule in result.rules:
+            assert rule.rule_type == "allow"

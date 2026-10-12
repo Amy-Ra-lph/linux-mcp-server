@@ -14,12 +14,14 @@ from linux_mcp_server.commands import get_command_group
 from linux_mcp_server.models import SELinuxBooleans
 from linux_mcp_server.models import SELinuxDenials
 from linux_mcp_server.models import SELinuxFileContext
+from linux_mcp_server.models import SELinuxPolicyRules
 from linux_mcp_server.models import SELinuxPorts
 from linux_mcp_server.models import SELinuxStatus
 from linux_mcp_server.parsers import parse_selinux_booleans
 from linux_mcp_server.parsers import parse_selinux_denials
 from linux_mcp_server.parsers import parse_selinux_file_context
 from linux_mcp_server.parsers import parse_selinux_ports
+from linux_mcp_server.parsers import parse_sesearch_output
 from linux_mcp_server.parsers import parse_sestatus
 from linux_mcp_server.server import mcp
 from linux_mcp_server.utils.types import Host
@@ -168,3 +170,45 @@ async def get_selinux_ports(
         raise ToolError(f"Unable to retrieve SELinux port types: {stderr}")
 
     return parse_selinux_ports(stdout)
+
+
+@mcp.tool(
+    title="Get SELinux policy rules",
+    description="Query SELinux policy rules using sesearch. Filter by source type, target type, "
+    "object class, permission, or boolean name. Returns matching allow rules from the loaded policy.",
+    tags={"fixed", "selinux", "security", "policy"},
+    annotations=ToolAnnotations(readOnlyHint=True),
+)
+@log_tool_call
+async def get_selinux_policy_rules(
+    host: Host,
+    source: t.Annotated[str | None, Field(description="Source SELinux type (e.g. httpd_t)")] = None,
+    target: t.Annotated[str | None, Field(description="Target SELinux type (e.g. http_port_t)")] = None,
+    tclass: t.Annotated[str | None, Field(description="Object class (e.g. tcp_socket, file)")] = None,
+    permission: t.Annotated[str | None, Field(description="Permission to search for (e.g. read, write)")] = None,
+    boolean: t.Annotated[str | None, Field(description="Boolean name to find rules gated by")] = None,
+) -> SELinuxPolicyRules:
+    """Query SELinux policy rules via sesearch."""
+    cmd = get_command("selinux_sesearch")
+
+    kwargs: dict[str, object] = {}
+    if source:
+        kwargs["source"] = source
+    if target:
+        kwargs["target"] = target
+    if tclass:
+        kwargs["tclass"] = tclass
+    if permission:
+        kwargs["permission"] = permission
+    if boolean:
+        kwargs["boolean"] = boolean
+
+    try:
+        returncode, stdout, stderr = await cmd.run(host=host, **kwargs)
+    except Exception as e:
+        raise ToolError(f"Error querying SELinux policy: {str(e)}") from e
+
+    if not is_successful_output(returncode, stdout):
+        raise ToolError(f"Unable to query SELinux policy: {stderr}")
+
+    return parse_sesearch_output(stdout)

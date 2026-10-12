@@ -400,6 +400,21 @@ COMMANDS: Mapping[str, CommandGroup] = MappingProxyType(
                 "default": CommandSpec(args=("semanage", "port", "-l")),
             }
         ),
+        # === SELinux policy query ===
+        "selinux_sesearch": CommandGroup(
+            commands={
+                "default": CommandSpec(
+                    args=("sesearch", "--allow"),
+                    optional_flags={
+                        "source": ("-s", "{source}"),
+                        "target": ("-t", "{target}"),
+                        "tclass": ("-c", "{tclass}"),
+                        "permission": ("-p", "{permission}"),
+                        "boolean": ("-b", "{boolean}"),
+                    },
+                ),
+            }
+        ),
     }
 )
 
