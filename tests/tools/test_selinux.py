@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for SELinux tools."""
 
+import json
+
 import pytest
 
 from fastmcp import exceptions
@@ -301,3 +303,191 @@ class TestGetSelinuxPolicyRules:
         assert result.structured_content is not None
         assert result.structured_content["total"] == 1
         assert result.structured_content["rules"][0]["conditional"] == "httpd_can_network_connect"
+
+
+AVC_DENIAL_LINE = (
+    'type=AVC msg=audit(1234567890.123:456): avc:  denied  { read } for  pid=1234 '
+    'comm="httpd" name="index.html" dev="sda1" ino=12345 '
+    'scontext=system_u:system_r:httpd_t:s0 tcontext=system_u:object_r:user_home_t:s0 '
+    'tclass=file permissive=0'
+)
+
+
+class TestExplainSelinuxDenial:
+    async def test_explains_denial(self, mcp_client, mock_execute):
+        sesearch_output = "allow httpd_t httpd_config_t:file { read };"
+
+        def side_effect(*args, **_kwargs):
+            cmd = args[0][0]
+            if cmd == "sesearch":
+                return (0, sesearch_output, "")
+            return (0, "", "")
+
+        mock_execute.side_effect = side_effect
+
+        result = await mcp_client.call_tool(
+            "explain_selinux_denial", {"denial": AVC_DENIAL_LINE, "host": "localhost"}
+        )
+
+        assert len(result.content) > 0
+        content = json.loads(result.content[0].text)
+        assert content["denied_permission"] == "read"
+        assert content["source_type"] == "httpd_t"
+        assert content["target_type"] == "user_home_t"
+        assert content["object_class"] == "file"
+
+    async def test_handles_malformed_denial(self, mcp_client, mock_execute):
+        mock_execute.return_value = (0, "", "")
+
+        result = await mcp_client.call_tool(
+            "explain_selinux_denial", {"denial": "not an AVC line", "host": "localhost"}
+        )
+
+        assert len(result.content) > 0
+        content = json.loads(result.content[0].text)
+        assert content["denial_summary"].startswith("Could not parse")
+
+    async def test_shows_existing_rules_count(self, mcp_client, mock_execute):
+        sesearch_output = (
+            "allow httpd_t user_home_t:file { read };\n"
+            "allow httpd_t user_home_t:file { getattr };"
+        )
+
+        def side_effect(*args, **_kwargs):
+            cmd = args[0][0]
+            if cmd == "sesearch":
+                return (0, sesearch_output, "")
+            return (0, "", "")
+
+        mock_execute.side_effect = side_effect
+
+        result = await mcp_client.call_tool(
+            "explain_selinux_denial", {"denial": AVC_DENIAL_LINE, "host": "localhost"}
+        )
+
+        content = json.loads(result.content[0].text)
+        assert content["existing_rules"] == 2
+
+    async def test_handles_sesearch_failure_gracefully(self, mcp_client, mock_execute):
+        def side_effect(*args, **_kwargs):
+            cmd = args[0][0]
+            if cmd == "sesearch":
+                return (1, "", "command not found")
+            return (0, "", "")
+
+        mock_execute.side_effect = side_effect
+
+        result = await mcp_client.call_tool(
+            "explain_selinux_denial", {"denial": AVC_DENIAL_LINE, "host": "localhost"}
+        )
+
+        content = json.loads(result.content[0].text)
+        assert content["existing_rules"] == 0
+        assert content["denied_permission"] == "read"
+
+    async def test_returns_explanation_when_sesearch_errors(self, mcp_client, mock_execute):
+        mock_execute.side_effect = RuntimeError("Connection refused")
+
+        result = await mcp_client.call_tool(
+            "explain_selinux_denial", {"denial": AVC_DENIAL_LINE, "host": "localhost"}
+        )
+
+        content = json.loads(result.content[0].text)
+        assert content["denied_permission"] == "read"
+        assert content["existing_rules"] == 0
+
+
+class TestTroubleshootSelinux:
+    async def test_returns_report_with_denials(self, mcp_client, mock_execute):
+        denial_output = (
+            "Oct 10 14:23:01 host audit[1234]: AVC avc:  denied  { read } for  pid=5678 "
+            'comm="httpd" scontext=system_u:system_r:httpd_t:s0 '
+            "tcontext=system_u:object_r:user_home_t:s0 tclass=file\n"
+        )
+
+        def side_effect(*args, **_kwargs):
+            cmd = args[0][0]
+            if cmd == "journalctl":
+                return (0, denial_output, "")
+            if cmd == "getenforce":
+                return (0, "Enforcing\n", "")
+            if cmd == "sesearch":
+                return (0, "", "")
+            return (0, "", "")
+
+        mock_execute.side_effect = side_effect
+
+        result = await mcp_client.call_tool("troubleshoot_selinux", {"host": "localhost"})
+
+        assert len(result.content) > 0
+        content = json.loads(result.content[0].text)
+        assert content["selinux_mode"] == "Enforcing"
+        assert content["total_denials"] == 1
+        assert content["unique_issues"] == 1
+        assert content["issues"][0]["source_type"] == "httpd_t"
+
+    async def test_returns_empty_when_no_denials(self, mcp_client, mock_execute):
+        def side_effect(*args, **_kwargs):
+            cmd = args[0][0]
+            if cmd == "getenforce":
+                return (0, "Enforcing\n", "")
+            return (0, "", "")
+
+        mock_execute.side_effect = side_effect
+
+        result = await mcp_client.call_tool("troubleshoot_selinux", {"host": "localhost"})
+
+        assert len(result.content) > 0
+        content = json.loads(result.content[0].text)
+        assert content["total_denials"] == 0
+        assert content["unique_issues"] == 0
+
+    async def test_deduplicates_repeated_denials(self, mcp_client, mock_execute):
+        denial_output = (
+            "Oct 10 14:23:01 host audit: AVC avc:  denied  { read } for "
+            "scontext=system_u:system_r:httpd_t:s0 tcontext=system_u:object_r:user_home_t:s0 tclass=file\n"
+            "Oct 10 14:23:02 host audit: AVC avc:  denied  { read } for "
+            "scontext=system_u:system_r:httpd_t:s0 tcontext=system_u:object_r:user_home_t:s0 tclass=file\n"
+            "Oct 10 14:23:03 host audit: AVC avc:  denied  { write } for "
+            "scontext=system_u:system_r:httpd_t:s0 tcontext=system_u:object_r:tmp_t:s0 tclass=file\n"
+        )
+
+        def side_effect(*args, **_kwargs):
+            cmd = args[0][0]
+            if cmd == "journalctl":
+                return (0, denial_output, "")
+            if cmd == "getenforce":
+                return (0, "Enforcing\n", "")
+            if cmd == "sesearch":
+                return (0, "", "")
+            return (0, "", "")
+
+        mock_execute.side_effect = side_effect
+
+        result = await mcp_client.call_tool("troubleshoot_selinux", {"host": "localhost"})
+
+        content = json.loads(result.content[0].text)
+        assert content["total_denials"] == 3
+        assert content["unique_issues"] == 2
+
+    async def test_raises_on_exception(self, mcp_client, mock_execute):
+        mock_execute.side_effect = RuntimeError("Connection refused")
+
+        with pytest.raises(exceptions.ToolError):
+            await mcp_client.call_tool("troubleshoot_selinux", {"host": "localhost"})
+
+    async def test_accepts_since_parameter(self, mcp_client, mock_execute):
+        def side_effect(*args, **_kwargs):
+            cmd = args[0][0]
+            if cmd == "getenforce":
+                return (0, "Enforcing\n", "")
+            return (0, "", "")
+
+        mock_execute.side_effect = side_effect
+
+        result = await mcp_client.call_tool(
+            "troubleshoot_selinux", {"since": "1 hour ago", "host": "localhost"}
+        )
+
+        content = json.loads(result.content[0].text)
+        assert content["total_denials"] == 0

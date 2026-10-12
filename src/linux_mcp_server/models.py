@@ -316,6 +316,40 @@ class SELinuxPolicyRules(BaseModel):
     total: int = Field(default_factory=field_length("rules"))
 
 
+class SELinuxDenialExplanation(BaseModel):
+    """Structured explanation of an AVC denial."""
+
+    denial_summary: str = ""
+    source_context: str = ""
+    source_type: str = ""
+    target_context: str = ""
+    target_type: str = ""
+    denied_permission: str = ""
+    object_class: str = ""
+    existing_rules: int = 0
+    resolution_options: list[str] = Field(default_factory=list)
+
+
+class SELinuxTroubleshootIssue(BaseModel):
+    """A unique denial pattern found during troubleshooting."""
+
+    source_type: str = ""
+    target_type: str = ""
+    permission: str = ""
+    object_class: str = ""
+    count: int = 1
+    resolution_options: list[str] = Field(default_factory=list)
+
+
+class SELinuxTroubleshootReport(BaseModel):
+    """Consolidated SELinux troubleshooting report."""
+
+    selinux_mode: str = ""
+    total_denials: int = 0
+    unique_issues: int = 0
+    issues: list[SELinuxTroubleshootIssue] = Field(default_factory=list)
+
+
 ### Log models ###
 class LogEntries(BaseModel):
     entries: list[str]
