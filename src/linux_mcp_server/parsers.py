@@ -15,7 +15,11 @@ from datetime import timezone
 from datetime import tzinfo
 from pathlib import Path
 
+from linux_mcp_server.models import AIDEChange
+from linux_mcp_server.models import AIDECheckResult
 from linux_mcp_server.models import CpuInfo
+from linux_mcp_server.models import FapolicydStatus
+from linux_mcp_server.models import FapolicydTrustCheck
 from linux_mcp_server.models import ListeningPort
 from linux_mcp_server.models import MemoryInfo
 from linux_mcp_server.models import NetworkConnection
@@ -799,3 +803,135 @@ def parse_selinux_ports(stdout: str) -> SELinuxPorts:
             port_range = " ".join(parts[2:])
             ports.append(SELinuxPort(type=port_type, protocol=protocol, ports=port_range))
     return SELinuxPorts(ports=ports)
+
+
+def parse_fapolicyd_status(stdout: str) -> FapolicydStatus:
+    """Parse fapolicyd-cli --status output.
+
+    Args:
+        stdout: Raw output from fapolicyd-cli --status.
+
+    Returns:
+        FapolicydStatus object.
+    """
+    fields: dict[str, str] = {}
+    for line in stdout.strip().splitlines():
+        if ":" in line:
+            key, value = line.split(":", 1)
+            fields[key.strip().lower()] = value.strip()
+
+    permissive = fields.get("permissive", "")
+    mode = "permissive" if permissive == "1" else "enforcing" if permissive == "0" else ""
+    rules_count = 0
+    trust_db_size = 0
+    if rules_str := fields.get("rules"):
+        try:
+            rules_count = int(rules_str)
+        except ValueError:
+            pass
+    if trust_str := fields.get("trust db size"):
+        try:
+            trust_db_size = int(trust_str)
+        except ValueError:
+            pass
+
+    return FapolicydStatus(
+        active=bool(stdout.strip()),
+        mode=mode,
+        rules_count=rules_count,
+        trust_db_size=trust_db_size,
+    )
+
+
+def parse_fapolicyd_trust_check(stdout: str, path: str) -> FapolicydTrustCheck:
+    """Parse fapolicyd-cli --check-path output.
+
+    Args:
+        stdout: Raw output from fapolicyd-cli --check-path.
+        path: The path that was checked.
+
+    Returns:
+        FapolicydTrustCheck object.
+    """
+    lower = stdout.strip().lower()
+    trusted = "is trusted" in lower and "is not trusted" not in lower
+    trust_source = ""
+    if trusted:
+        for part in stdout.strip().split():
+            if part.startswith("(") and part.endswith(")"):
+                trust_source = part.strip("()")
+                break
+    return FapolicydTrustCheck(path=path, trusted=trusted, trust_source=trust_source)
+
+
+def _parse_aide_summary_field(line: str) -> int | None:
+    """Extract an integer from an AIDE summary line like 'Added entries: 2'."""
+    try:
+        return int(line.split(":")[-1].strip())
+    except ValueError:
+        return None
+
+
+_AIDE_CHANGE_PREFIXES = {
+    "f+": "added", "d+": "added",
+    "f ": "changed", "d ": "changed",
+    "f-": "removed", "d-": "removed",
+}
+
+_AIDE_SUMMARY_KEYS = {
+    "Total number of entries": "total_entries",
+    "Added entries": "added",
+    "Removed entries": "removed",
+    "Changed entries": "changed",
+}
+
+
+def parse_aide_check(stdout: str) -> AIDECheckResult:
+    """Parse aide --check output.
+
+    Args:
+        stdout: Raw output from aide --check.
+
+    Returns:
+        AIDECheckResult object.
+    """
+    counts: dict[str, int] = {}
+    changes: list[AIDEChange] = []
+
+    for line in stdout.strip().splitlines():
+        stripped = line.strip()
+        for label, field in _AIDE_SUMMARY_KEYS.items():
+            if stripped.startswith(label):
+                if (val := _parse_aide_summary_field(stripped)) is not None:
+                    counts[field] = val
+                break
+        else:
+            for prefix, change_type in _AIDE_CHANGE_PREFIXES.items():
+                if stripped.startswith(prefix):
+                    parts = stripped.split(": ", 1)
+                    if len(parts) == 2:
+                        changes.append(AIDEChange(path=parts[1].strip(), change_type=change_type))
+                    break
+
+    return AIDECheckResult(
+        total_entries=counts.get("total_entries", 0),
+        added=counts.get("added", 0),
+        removed=counts.get("removed", 0),
+        changed=counts.get("changed", 0),
+        changes=changes,
+    )
+
+
+def parse_aide_version(stdout: str) -> str:
+    """Extract AIDE version from aide --version output.
+
+    Args:
+        stdout: Raw output from aide --version.
+
+    Returns:
+        Version string.
+    """
+    for line in stdout.strip().splitlines():
+        if match := re.search(r"(\d+\.\d+(?:\.\d+)?)", line):
+            return match.group(1)
+    return ""

@@ -400,6 +400,35 @@ COMMANDS: Mapping[str, CommandGroup] = MappingProxyType(
                 "default": CommandSpec(args=("semanage", "port", "-l")),
             }
         ),
+        # === fapolicyd ===
+        "fapolicyd_status": CommandGroup(
+            commands={
+                "default": CommandSpec(
+                    args=("fapolicyd-cli", "--status"),
+                    fallback=("systemctl", "is-active", "fapolicyd"),
+                ),
+            }
+        ),
+        "fapolicyd_check_path": CommandGroup(
+            commands={
+                "default": CommandSpec(args=("fapolicyd-cli", "--check-path", "{path}")),
+            }
+        ),
+        # === AIDE ===
+        "aide_check": CommandGroup(
+            commands={
+                "default": CommandSpec(
+                    args=("aide", "--check"),
+                    fallback=("aide", "-C"),
+                ),
+            }
+        ),
+        "aide_status": CommandGroup(
+            commands={
+                "version": CommandSpec(args=("aide", "--version")),
+                "db_check": CommandSpec(args=("test", "-f", "/var/lib/aide/aide.db.gz")),
+            }
+        ),
     }
 )
 

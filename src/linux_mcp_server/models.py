@@ -298,6 +298,50 @@ class SELinuxPorts(BaseModel):
     total: int = Field(default_factory=field_length("ports"))
 
 
+### fapolicyd models ###
+class FapolicydStatus(BaseModel):
+    """fapolicyd daemon status."""
+
+    active: bool
+    mode: str = ""
+    rules_count: int = 0
+    trust_db_size: int = 0
+
+
+class FapolicydTrustCheck(BaseModel):
+    """fapolicyd trust check result for a file path."""
+
+    path: str
+    trusted: bool
+    trust_source: str = ""
+
+
+### AIDE models ###
+class AIDEChange(BaseModel):
+    """A single AIDE-detected filesystem change."""
+
+    path: str
+    change_type: str
+
+
+class AIDECheckResult(BaseModel):
+    """AIDE integrity check summary."""
+
+    total_entries: int = 0
+    added: int = 0
+    removed: int = 0
+    changed: int = 0
+    changes: list[AIDEChange] = Field(default_factory=list)
+
+
+class AIDEStatus(BaseModel):
+    """AIDE installation and database status."""
+
+    installed: bool
+    version: str = ""
+    database_exists: bool = False
+
+
 ### Log models ###
 class LogEntries(BaseModel):
     entries: list[str]

@@ -23,8 +23,12 @@ from linux_mcp_server.config import Toolset
 
 FIXED_TOOLS = set(
     [
+        "get_aide_check",
+        "get_aide_status",
         "get_cpu_information",
         "get_disk_usage",
+        "get_fapolicyd_status",
+        "get_fapolicyd_trust_check",
         "get_hardware_information",
         "get_journal_logs",
         "get_listening_ports",

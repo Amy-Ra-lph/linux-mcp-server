@@ -1,4 +1,12 @@
 # Arbitrary script execution
+# aide
+from linux_mcp_server.tools.aide import get_aide_check
+from linux_mcp_server.tools.aide import get_aide_status
+
+# fapolicyd
+from linux_mcp_server.tools.fapolicyd import get_fapolicyd_status
+from linux_mcp_server.tools.fapolicyd import get_fapolicyd_trust_check
+
 # logs
 from linux_mcp_server.tools.logs import get_journal_logs
 from linux_mcp_server.tools.logs import read_log_file
@@ -53,6 +61,10 @@ from linux_mcp_server.tools.system_info import get_system_information
 
 __all__ = [
     "execute_script",
+    "get_aide_check",
+    "get_aide_status",
+    "get_fapolicyd_status",
+    "get_fapolicyd_trust_check",
     "get_cpu_information",
     "get_disk_usage",
     "get_execution_details",
