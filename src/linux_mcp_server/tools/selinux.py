@@ -2,9 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 """SELinux security tools."""
 
+from __future__ import annotations
+
+import re
 import typing as t
 
+import yaml
+
 from fastmcp.exceptions import ToolError
+from mcp.types import TextContent
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -27,6 +33,16 @@ from linux_mcp_server.server import mcp
 from linux_mcp_server.utils.types import Host
 from linux_mcp_server.utils.validation import is_successful_output
 from linux_mcp_server.utils.validation import validate_path
+
+
+_SELINUX_IDENTIFIER = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+_VALID_FINDING_TYPES = {"denial", "file_context", "boolean"}
+
+
+def _validate_selinux_identifier(value: str, field_name: str) -> str:
+    if not _SELINUX_IDENTIFIER.match(value):
+        raise ToolError(f"Invalid {field_name}: {value!r}. Must match [a-zA-Z_][a-zA-Z0-9_]*")
+    return value
 
 
 @mcp.tool(
@@ -212,3 +228,144 @@ async def get_selinux_policy_rules(
         raise ToolError(f"Unable to query SELinux policy: {stderr}")
 
     return parse_sesearch_output(stdout)
+
+
+def _build_boolean_task(finding: dict[str, str]) -> dict[str, t.Any]:
+    name = finding.get("name", "")
+    _validate_selinux_identifier(name, "boolean name")
+    desired = finding.get("desired_state", "on")
+    state = desired.lower() in ("on", "true", "yes")
+    return {
+        "name": f"Set SELinux boolean {name}",
+        "ansible.posix.seboolean": {
+            "name": name,
+            "state": state,
+            "persistent": True,
+        },
+    }
+
+
+def _build_file_context_tasks(finding: dict[str, str]) -> list[dict[str, t.Any]]:
+    path = finding.get("path", "")
+    validate_path(path)
+    expected = finding.get("expected_context", "")
+    _validate_selinux_identifier(expected, "expected_context")
+    return [
+        {
+            "name": f"Set SELinux file context for {path}",
+            "community.general.sefcontext": {
+                "target": path + "(/.*)?" if not path.endswith("(/.*)?") else path,
+                "setype": expected,
+                "state": "present",
+            },
+        },
+        {
+            "name": f"Restore SELinux context on {path}",
+            "ansible.builtin.command": f"restorecon -R {path}",
+        },
+    ]
+
+
+async def _build_denial_tasks(finding: dict[str, str], host: Host) -> list[dict[str, t.Any]]:
+    source = finding.get("source_type", "")
+    target = finding.get("target_type", "")
+    perm = finding.get("permission", "")
+    tclass = finding.get("tclass", "")
+
+    _validate_selinux_identifier(source, "source_type")
+    _validate_selinux_identifier(target, "target_type")
+    _validate_selinux_identifier(perm, "permission")
+    _validate_selinux_identifier(tclass, "tclass")
+
+    cmd = get_command("selinux_sesearch")
+    try:
+        returncode, stdout, _ = await cmd.run(
+            host=host, source=source, target=target, tclass=tclass, permission=perm,
+        )
+    except Exception:
+        stdout = ""
+        returncode = 1
+
+    if returncode == 0 and stdout:
+        rules = parse_sesearch_output(stdout)
+        for rule in rules.rules:
+            if rule.conditional:
+                return [
+                    {
+                        "name": f"Enable boolean {rule.conditional} for {source} -> {target}:{tclass}",
+                        "ansible.posix.seboolean": {
+                            "name": rule.conditional,
+                            "state": True,
+                            "persistent": True,
+                        },
+                    }
+                ]
+
+    module_name = f"local_{source}_{perm}_{tclass}"
+    cil_content = f"(allow {source} {target} ({tclass} ({perm})))"
+    return [
+        {
+            "name": f"Create CIL module {module_name}",
+            "ansible.builtin.copy": {
+                "dest": f"/tmp/{module_name}.cil",
+                "content": cil_content,
+                "mode": "0644",
+            },
+        },
+        {
+            "name": f"Load CIL module {module_name}",
+            "ansible.builtin.command": f"semodule -i /tmp/{module_name}.cil",
+        },
+    ]
+
+
+@mcp.tool(
+    title="Generate SELinux remediation playbook",
+    description="Generate an Ansible playbook to remediate SELinux issues. Accepts a list of findings "
+    "(denial, file_context, boolean) and produces a YAML playbook using standard Ansible SELinux modules. "
+    "Read-only: returns the playbook text without executing it.",
+    tags={"fixed", "selinux", "security", "remediation"},
+    annotations=ToolAnnotations(readOnlyHint=True),
+)
+@log_tool_call
+async def generate_selinux_playbook(
+    host: Host,
+    findings: t.Annotated[
+        list[dict[str, str]],
+        Field(
+            description="List of findings to remediate. Each finding is a dict with 'type' "
+            "(denial|file_context|boolean) and relevant fields: "
+            "denial: source_type, target_type, permission, tclass; "
+            "file_context: path, expected_context; "
+            "boolean: name, desired_state (on/off)"
+        ),
+    ],
+) -> list[TextContent]:
+    """Generate an Ansible playbook to remediate SELinux findings."""
+    if not findings:
+        raise ToolError("No findings provided to generate a playbook")
+
+    tasks: list[dict[str, t.Any]] = []
+
+    for finding in findings:
+        finding_type = finding.get("type", "")
+        if finding_type not in _VALID_FINDING_TYPES:
+            raise ToolError(f"Unknown finding type: {finding_type!r}. Must be one of: {_VALID_FINDING_TYPES}")
+
+        if finding_type == "boolean":
+            tasks.append(_build_boolean_task(finding))
+        elif finding_type == "file_context":
+            tasks.extend(_build_file_context_tasks(finding))
+        elif finding_type == "denial":
+            tasks.extend(await _build_denial_tasks(finding, host))
+
+    playbook = {
+        "name": "SELinux remediation",
+        "hosts": "all",
+        "become": True,
+        "collections": ["ansible.posix", "community.general"],
+        "tasks": tasks,
+    }
+
+    playbook_yaml = yaml.dump([playbook], default_flow_style=False, sort_keys=False)
+    return [TextContent(type="text", text=playbook_yaml)]

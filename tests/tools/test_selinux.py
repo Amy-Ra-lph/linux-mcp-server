@@ -301,3 +301,140 @@ class TestGetSelinuxPolicyRules:
         assert result.structured_content is not None
         assert result.structured_content["total"] == 1
         assert result.structured_content["rules"][0]["conditional"] == "httpd_can_network_connect"
+
+
+class TestGenerateSelinuxPlaybook:
+    async def test_generates_boolean_playbook(self, mcp_client, mock_execute):
+        mock_execute.return_value = (0, "", "")
+
+        result = await mcp_client.call_tool(
+            "generate_selinux_playbook",
+            {
+                "findings": [
+                    {"type": "boolean", "name": "httpd_can_network_connect", "desired_state": "on"}
+                ],
+                "host": "localhost",
+            },
+        )
+
+        assert len(result.content) > 0
+        text = result.content[0].text
+        assert "httpd_can_network_connect" in text
+        assert "seboolean" in text
+
+    async def test_generates_file_context_playbook(self, mcp_client, mock_execute):
+        mock_execute.return_value = (0, "", "")
+
+        result = await mcp_client.call_tool(
+            "generate_selinux_playbook",
+            {
+                "findings": [
+                    {"type": "file_context", "path": "/var/www/custom", "expected_context": "httpd_sys_content_t"}
+                ],
+                "host": "localhost",
+            },
+        )
+
+        assert len(result.content) > 0
+        text = result.content[0].text
+        assert "restorecon" in text
+        assert "sefcontext" in text
+
+    async def test_generates_denial_with_boolean_fix(self, mcp_client, mock_execute):
+        sesearch_output = (
+            "allow httpd_t http_cache_port_t:tcp_socket { name_connect };"
+            " [ httpd_can_network_connect ]:True"
+        )
+        mock_execute.return_value = (0, sesearch_output, "")
+
+        result = await mcp_client.call_tool(
+            "generate_selinux_playbook",
+            {
+                "findings": [
+                    {
+                        "type": "denial",
+                        "source_type": "httpd_t",
+                        "target_type": "http_cache_port_t",
+                        "permission": "name_connect",
+                        "tclass": "tcp_socket",
+                    }
+                ],
+                "host": "localhost",
+            },
+        )
+
+        assert len(result.content) > 0
+        text = result.content[0].text
+        assert "httpd_can_network_connect" in text
+
+    async def test_generates_denial_with_cil_module(self, mcp_client, mock_execute):
+        mock_execute.return_value = (0, "Found 0 semantic av rules.", "")
+
+        result = await mcp_client.call_tool(
+            "generate_selinux_playbook",
+            {
+                "findings": [
+                    {
+                        "type": "denial",
+                        "source_type": "httpd_t",
+                        "target_type": "user_home_t",
+                        "permission": "read",
+                        "tclass": "file",
+                    }
+                ],
+                "host": "localhost",
+            },
+        )
+
+        assert len(result.content) > 0
+        text = result.content[0].text
+        assert "semodule" in text
+        assert "cil" in text.lower()
+
+    async def test_rejects_empty_findings(self, mcp_client, mock_execute):
+        with pytest.raises(exceptions.ToolError, match="No findings"):
+            await mcp_client.call_tool(
+                "generate_selinux_playbook",
+                {"findings": [], "host": "localhost"},
+            )
+
+    async def test_rejects_invalid_finding_type(self, mcp_client, mock_execute):
+        with pytest.raises(exceptions.ToolError, match="Unknown finding type"):
+            await mcp_client.call_tool(
+                "generate_selinux_playbook",
+                {
+                    "findings": [{"type": "invalid_type"}],
+                    "host": "localhost",
+                },
+            )
+
+    async def test_rejects_invalid_boolean_name(self, mcp_client, mock_execute):
+        with pytest.raises(exceptions.ToolError, match="Invalid"):
+            await mcp_client.call_tool(
+                "generate_selinux_playbook",
+                {
+                    "findings": [
+                        {"type": "boolean", "name": "$(evil)", "desired_state": "on"}
+                    ],
+                    "host": "localhost",
+                },
+            )
+
+    async def test_multiple_findings(self, mcp_client, mock_execute):
+        mock_execute.return_value = (0, "", "")
+
+        result = await mcp_client.call_tool(
+            "generate_selinux_playbook",
+            {
+                "findings": [
+                    {"type": "boolean", "name": "httpd_can_network_connect", "desired_state": "on"},
+                    {"type": "file_context", "path": "/var/www/custom", "expected_context": "httpd_sys_content_t"},
+                ],
+                "host": "localhost",
+            },
+        )
+
+        assert len(result.content) > 0
+        text = result.content[0].text
+        assert "httpd_can_network_connect" in text
+        assert "restorecon" in text
